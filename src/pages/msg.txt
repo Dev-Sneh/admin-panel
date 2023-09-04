@@ -1,0 +1,232 @@
+import React, { useState, useEffect } from 'react';
+import FirebaseData from '../firebaseConfig/index';
+import Sidebar from '../partials/Sidebar';
+import Header from '../partials/Header';
+import { ref, onValue, remove } from 'firebase/database';
+import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
+import DeleteIcon from '@mui/icons-material/Delete';
+import IconButton from '@mui/material/IconButton';
+
+function Messages() {
+  const [selectedUserId, setSelectedUserId] = useState(null);
+  const [userDetails, setUserDetails] = useState({});
+  const [userInbox, setUserInbox] = useState([]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [error, setError] = useState(null);
+  const [userIds, setUserIds] = useState([]);
+  const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [userIdToDelete, setUserIdToDelete] = useState(null);
+
+  useEffect(() => {
+    const { db } = FirebaseData();
+
+    const usersRef = ref(db, 'users');
+    onValue(usersRef, (snapshot) => {
+      try {
+        const userIdsArray = Object.keys(snapshot.val());
+        setUserIds(userIdsArray);
+      } catch (error) {
+        setError(error.message);
+        console.error('Error fetching user IDs:', error);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (userIds.length > 0) {
+      const { db } = FirebaseData();
+
+      const fetchUserDetails = async (userId) => {
+        const userDetailsRef = ref(db, `users/${userId}/userDetails`);
+        onValue(userDetailsRef, (snapshot) => {
+          try {
+            const userDetailsData = snapshot.val();
+            if (userDetailsData) {
+              setUserDetails((prevUserDetails) => ({
+                ...prevUserDetails,
+                [userId]: userDetailsData,
+              }));
+            }
+          } catch (error) {
+            setError(error.message);
+            console.error('Error fetching user details:', error);
+          }
+        });
+      };
+
+      userIds.forEach((userId) => {
+        fetchUserDetails(userId);
+      });
+    }
+  }, [userIds]);
+
+  const fetchUserInbox = (userId) => {
+    const { db } = FirebaseData();
+    const dbRef = ref(db, `users/${userId}/userInbox`);
+    onValue(dbRef, (snapshot) => {
+      try {
+        const inboxData = snapshot.val();
+        if (inboxData) {
+          setUserInbox(Object.values(inboxData));
+        } else {
+          setUserInbox([]);
+        }
+      } catch (error) {
+        setError(error.message);
+        console.error('Error fetching user inbox:', error);
+      }
+    });
+  };
+
+  const handleUsernameClick = (userId) => {
+    setSelectedUserId(userId);
+    fetchUserInbox(userId);
+  };
+
+ 
+  const openDeleteModal = (userId) => {
+    setUserIdToDelete(userId);
+    setDeleteModalOpen(true);
+  };
+
+
+  const closeDeleteModal = () => {
+    setUserIdToDelete(null);
+    setDeleteModalOpen(false);
+  };
+
+
+  // const handleDeleteUser = () => {
+  //   closeDeleteModal();
+  //   setUserIds((prevUserIds) => prevUserIds.filter((id) => id !== userIdToDelete));
+  //   setUserDetails((prevUserDetails) => {
+  //     const newUserDetails = { ...prevUserDetails };
+  //     delete newUserDetails[userIdToDelete];
+  //     return newUserDetails;
+  //   });
+  // };
+  const handleDeleteUser = () => {
+    const { db } = FirebaseData();
+    remove(ref(db, `users/${userIdToDelete}`));
+    setUserIds((prevUserIds) => prevUserIds.filter((id) => id !== userIdToDelete));
+    setUserDetails((prevUserDetails) => {
+      const newUserDetails = { ...prevUserDetails };
+      delete newUserDetails[userIdToDelete];
+      return newUserDetails;
+    });
+   
+    setUserInbox((prevUserInbox) =>
+      prevUserInbox.filter((message) => message.userId !== userIdToDelete)
+    );
+  
+    closeDeleteModal();
+  };
+  
+
+  return (
+    <div className="flex h-screen overflow-hidden">
+      {/* Sidebar */}
+      <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
+
+      {/* Content area */}
+      <div className="relative flex flex-col flex-1 overflow-y-auto overflow-x-hidden">
+        {/* Site header */}
+        <Header sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
+
+        <div className="flex">
+          <div className="w-1/3 p-4 border-r">
+            <h1 className="text-xl font-bold text-center pb-6">User Details</h1>
+            <ul>
+              {userIds.map((userId) => (
+                <li
+                  key={userId}
+                  onClick={() => handleUsernameClick(userId)}
+                  style={{ cursor: 'pointer' }}
+                  className="mb-4 p-4 border rounded-lg hover:bg-gray-100 transition duration-300 ease-in-out flex items-center justify-between"
+                >
+                  {userDetails[userId]?.userStatus === 'Active' ? (
+                    <FiberManualRecordIcon style={{ marginRight: '8px', color: 'green' }} />
+                  ) : (
+                    <FiberManualRecordIcon style={{ marginRight: '8px', color: 'red' }} />
+                  )}
+                  <AccountCircleIcon style={{ fontSize: '36px' }} />
+                  {userDetails[userId] && (
+                    <div>
+                      <p className="font-semibold mb-1">
+                        Username: {userDetails[userId].userName}
+                      </p>
+                      <p>User Number: {userDetails[userId].userNumber}</p>
+                    </div>
+                  )}
+                  {/* <IconButton
+                    aria-label="delete"
+                    color="secondary"
+                    onClick={() => handleDeleteUser(userId)}
+                    // style={{ color: 'red' }}
+                  >
+                    <DeleteIcon />
+                  </IconButton> */}
+                   <IconButton
+                    aria-label="delete"
+                    color="secondary"
+                    onClick={() => openDeleteModal(userId)} // Open the delete modal
+                  >
+                    <DeleteIcon />
+                  </IconButton>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="w-2/3 p-4">
+            {error && <p className="text-red-500 mb-4">Error: {error}</p>}
+
+            <div>
+              <h1 className="text-xl font-bold text-center pb-3">User Inbox</h1>
+              {userInbox.map((message) => (
+                <div
+                  key={message.id}
+                  className={`bg-blue-500 text-white p-4 m-2 ${message.sender ? 'rounded-l-lg' : 'rounded-r-lg'
+                    } border`}
+                  style={{
+                    maxWidth: '80%',
+                    marginLeft: message.sender ? 'auto' : '10%',
+                    borderRadius: '10px',
+                    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+                  }}
+                >
+                  <p>{message.text}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+      {isDeleteModalOpen && (
+  <div className="fixed inset-0 flex items-center justify-center z-50">
+    <div className="bg-white p-4 shadow-lg rounded-lg text-center">
+      <p className="mb-4 text-lg font-semibold text-red-600">Confirm Deletion</p>
+      <p className="mb-4 text-gray-800">Are you sure you want to delete this user?</p>
+      <div className="flex justify-center">
+        <button
+          className="mr-2 px-4 py-2 text-white bg-red-500 rounded-lg hover:bg-red-600 focus:outline-none mr-3"
+          onClick={handleDeleteUser}
+        >
+          Yes
+        </button>
+        <button
+          className="px-4 py-2 text-gray-600 bg-gray-200 rounded-lg hover:bg-gray-300 focus:outline-none ml-3"
+          onClick={closeDeleteModal}
+        >
+          No
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+    </div>
+  );
+}
+
+export default Messages;
